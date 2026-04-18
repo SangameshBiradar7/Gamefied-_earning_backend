@@ -37,10 +37,21 @@ router.get('/me', auth, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Get completed lesson details
-    const completedLessons = await Lesson.find({ 
-      _id: { $in: user.completedLessons.map(l => l.lessonId) } 
-    }).populate('subject', 'name displayName color');
+    // Get completed lesson details with full progress
+    const completedLessonsWithDetails = user.completedLessons.map(cl => {
+      const lesson = cl.lessonId ? 
+        typeof cl.lessonId === 'object' ? cl.lessonId : null : null;
+      return {
+        id: cl.lessonId ? 
+          (typeof cl.lessonId === 'object' ? cl.lessonId._id : cl.lessonId) : null,
+        title: lesson ? lesson.title : 'Lesson',
+        subject: lesson ? lesson.subject : null,
+        videoCompleted: cl.videoCompleted || false,
+        videoWatchedPercent: cl.videoWatchedPercent || 0,
+        quizCompleted: cl.quizCompleted || false,
+        completedAt: cl.completedAt
+      };
+    });
 
     res.json({
       user: {
@@ -52,11 +63,7 @@ router.get('/me', auth, async (req, res) => {
         level: user.level,
         streak: user.streak,
         badges: user.badges,
-        completedLessons: completedLessons.map(l => ({
-          id: l._id,
-          title: l.title,
-          subject: l.subject
-        })),
+        completedLessons: completedLessonsWithDetails,
         quizResults: user.quizResults
       }
     });

@@ -4,6 +4,8 @@ const path = require('path');
 const fs = require('fs');
 
 const router = express.Router();
+const auth = require('../middleware/auth');
+const adminAuth = require('../middleware/adminAuth');
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../../uploads');
@@ -41,8 +43,8 @@ const upload = multer({
   }
 });
 
-// Upload single video
-router.post('/video', upload.single('video'), (req, res) => {
+// Upload single video (admin only)
+router.post('/video', auth, adminAuth, upload.single('video'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No video file uploaded' });
   }
@@ -57,8 +59,8 @@ router.post('/video', upload.single('video'), (req, res) => {
   });
 });
 
-// Delete video
-router.delete('/video', (req, res) => {
+// Delete video (admin only)
+router.delete('/video', auth, adminAuth, (req, res) => {
   const { filename } = req.body;
   
   if (!filename) {
@@ -75,8 +77,8 @@ router.delete('/video', (req, res) => {
   }
 });
 
-// Get list of uploaded videos
-router.get('/videos', (req, res) => {
+// Get list of uploaded videos (admin only)
+router.get('/videos', auth, adminAuth, (req, res) => {
   fs.readdir(uploadsDir, (err, files) => {
     if (err) {
       return res.status(500).json({ error: 'Failed to read uploads directory' });

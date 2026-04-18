@@ -12,8 +12,7 @@ router.get('/', auth, adminAuth, async (req, res) => {
     if (role) {
       query.role = role;
     }
-    // If no role specified, return all users (for admin)
-    
+
     const students = await User.find(query)
       .select('-password')
       .populate('grade', 'name displayName')
@@ -73,21 +72,26 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
-// Update user grade
+// Update user grade (used by students after registration)
 router.put('/grade', auth, async (req, res) => {
   try {
     const { gradeId } = req.body;
-    const user = await User.findById(req.user.userId);
-    
+    const userId = req.user.userId;
+
+    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    user.grade = gradeId;
+    user.grade = gradeId || null;
     await user.save();
 
-    const grade = await Grade.findById(gradeId);
-    res.json({ grade });
+    const updatedUser = await User.findById(userId).populate('grade', 'name displayName');
+    
+    res.json({ 
+      message: 'Grade updated successfully',
+      grade: updatedUser.grade
+    });
   } catch (error) {
     console.error('Error updating grade:', error);
     res.status(500).json({ error: 'Failed to update grade' });

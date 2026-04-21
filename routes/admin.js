@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { User, Grade, Subject, Lesson } = require('../models');
+const { User, Grade, Subject, Lesson, WeeklyTest } = require('../models');
 const auth = require('../middleware/auth');
 const adminAuth = require('../middleware/adminAuth');
 
@@ -492,6 +492,244 @@ router.post('/seed', auth, adminAuth, async (req, res) => {
   } catch (error) {
     console.error('Error seeding data:', error);
     res.status(500).json({ error: 'Failed to seed data' });
+  }
+});
+
+// ============ WEEKLY TEST MANAGEMENT ============
+
+// Get all weekly tests (with optional filters)
+router.get('/weekly-tests', auth, adminAuth, async (req, res) => {
+  try {
+    const { gradeId, activeOnly = false } = req.query;
+    const query = { isActive: true };
+    
+    if (gradeId) {
+      query.grade = gradeId;
+    }
+    if (activeOnly === 'true') {
+      const now = new Date();
+      query.$or = [
+        { availableUntil: { $exists: false } },
+        { availableUntil: { $gte: now } }
+      ];
+    }
+
+    const tests = await WeeklyTest.find(query)
+      .populate('grade', 'displayName')
+      .populate('subject', 'displayName')
+      .sort({ createdAt: -1 });
+
+    // Add submission counts and compute pass rate
+    const testsWithStats = await Promise.all(tests.map(async (test) => {
+      const submissions = await User.find({
+        'weeklyTestResults.testId': test._id
+      });
+      
+      const submissionCount = submissions.length;
+      const passedCount = submissions.filter(u => {
+        const result = u.weeklyTestResults?.find(r => 
+          r.testId.toString() === test._id.toString()
+        );
+        return result && result.score >= test.passingScore;
+      }).length;
+
+      return {
+        ...test.toObject(),
+        results: {
+          attempted: submissionCount,
+          passRate: submissionCount > 0 ? Math.round((passedCount / submissionCount) * 100) : 0
+        }
+      };
+    }));
+
+    res.json(testsWithStats);
+  } catch (error) {
+    console.error('Error fetching weekly tests:', error);
+    res.status(500).json({ error: 'Failed to fetch weekly tests' });
+  }
+});
+      
+      return {
+        ...test.toObject(),
+        submissionCount
+      };
+    }));
+
+    res.json(testsWithStats);
+  } catch (error) {
+    console.error('Error fetching weekly tests:', error);
+    res.status(500).json({ error: 'Failed to fetch weekly tests' });
+  }
+});
+
+// Get single weekly test with submissions
+router.get('/weekly-tests/:id', auth, adminAuth, async (req, res) => {
+  try {
+    const test = await WeeklyTest.findById(req.params.id)
+      .populate('grade', 'displayName')
+      .populate('subject', 'displayName');
+
+    if (!test) {
+      return res.status(404).json({ error: 'Weekly test not found' });
+    }
+
+    // Get student submissions
+    const students = await User.find({
+      'weeklyTestResults.testId': test._id
+    })
+      .select('username grade school village')
+      .populate('grade', 'displayName');
+
+    const submissions = students.map(user => {
+      const result = user.weeklyTestResults?.find(r => 
+        r.testId.toString() === test._id.toString()
+      );
+      return {
+        userId: user._id,
+        username: user.username,
+        grade: user.grade,
+        school: user.school,
+        village: user.village,
+        score: result?.score || 0,
+        completedAt: result?.completedAt || null,
+        timeTaken: result?.timeTaken || 0
+      };
+    });
+
+    res.json({
+      test,
+      submissions,
+      totalSubmissions: submissions.length,
+      averageScore: submissions.length > 0 
+        ? Math.round(submissions.reduce((sum, s) => sum + s.score, 0) / submissions.length)
+        : 0
+    });
+  } catch (error) {
+    console.error('Error fetching weekly test:', error);
+    res.status(500).json({ error: 'Failed to fetch weekly test' });
+  }
+});
+
+// Create weekly test
+router.post('/weekly-tests', auth, adminAuth, async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      weekNumber,
+      year,
+      grade,
+      subject,
+      questions,
+      timeLimit,
+      pointsReward,
+      maxScore,
+      passingScore,
+      availableFrom,
+      availableUntil,
+      assignedStudents,
+      isActive
+    } = req.body;
+
+    const weeklyTest = new WeeklyTest({
+      title,
+      description,
+      weekNumber,
+      year,
+      grade,
+      subject,
+      questions: questions || [],
+      timeLimit: timeLimit || 30,
+      pointsReward: pointsReward || 100,
+      maxScore: maxScore || 100,
+      passingScore: passingScore || 50,
+      availableFrom: availableFrom ? new Date(availableFrom) : new Date(),
+      availableUntil: availableUntil ? new Date(availableUntil) : null,
+      assignedStudents: assignedStudents || [],
+      isActive: isActive !== false
+    });
+
+    await weeklyTest.save();
+    res.status(201).json(weeklyTest);
+  } catch (error) {
+    console.error('Error creating weekly test:', error);
+    res.status(500).json({ error: 'Failed to create weekly test: ' + error.message });
+  }
+});
+
+// Update weekly test
+router.put('/weekly-tests/:id', auth, adminAuth, async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      weekNumber,
+      year,
+      grade,
+      subject,
+      questions,
+      timeLimit,
+      pointsReward,
+      maxScore,
+      passingScore,
+      availableFrom,
+      availableUntil,
+      assignedStudents,
+      isActive
+    } = req.body;
+
+    const updateData = {};
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (weekNumber !== undefined) updateData.weekNumber = weekNumber;
+    if (year !== undefined) updateData.year = year;
+    if (grade !== undefined) updateData.grade = grade;
+    if (subject !== undefined) updateData.subject = subject;
+    if (questions !== undefined) updateData.questions = questions;
+    if (timeLimit !== undefined) updateData.timeLimit = timeLimit;
+    if (pointsReward !== undefined) updateData.pointsReward = pointsReward;
+    if (maxScore !== undefined) updateData.maxScore = maxScore;
+    if (passingScore !== undefined) updateData.passingScore = passingScore;
+    if (availableFrom !== undefined) updateData.availableFrom = availableFrom ? new Date(availableFrom) : new Date();
+    if (availableUntil !== undefined) updateData.availableUntil = availableUntil ? new Date(availableUntil) : null;
+    if (assignedStudents !== undefined) updateData.assignedStudents = assignedStudents;
+    if (isActive !== undefined) updateData.isActive = isActive;
+
+    const test = await WeeklyTest.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true }
+    ).populate('grade', 'displayName')
+     .populate('subject', 'displayName');
+
+    if (!test) {
+      return res.status(404).json({ error: 'Weekly test not found' });
+    }
+
+    res.json(test);
+  } catch (error) {
+    console.error('Error updating weekly test:', error);
+    res.status(500).json({ error: 'Failed to update weekly test' });
+  }
+});
+
+// Delete weekly test (soft delete)
+router.delete('/weekly-tests/:id', auth, adminAuth, async (req, res) => {
+  try {
+    const test = await WeeklyTest.findByIdAndUpdate(
+      req.params.id,
+      { isActive: false },
+      { new: true }
+    );
+
+    if (!test) {
+      return res.status(404).json({ error: 'Weekly test not found' });
+    }
+
+    res.json({ message: 'Weekly test deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting weekly test:', error);
+    res.status(500).json({ error: 'Failed to delete weekly test' });
   }
 });
 

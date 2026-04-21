@@ -15,33 +15,22 @@ router.get('/level-distribution', auth, adminAuth, async (req, res) => {
       return { level, count };
     }));
 
-    // Also get cumulative data for line graph (over time - last 30 days)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const levelTrend = await User.aggregate([
-      { $match: { role: 'student', createdAt: { $gte: thirtyDaysAgo } } },
-      {
-        $group: {
-          _id: {
-            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
-            level: '$level'
-          },
-          count: { $sum: 1 }
-        }
-      },
-      {
-        $group: {
-          _id: '$$_id.level',
-          data: {
-            $push: {
-              date: '$_id.date',
-              count: '$count'
-            }
-          }
-        }
-      }
-    ]);
+    // Generate trend data for last 7 days (simulated for now)
+    const levelTrend = [];
+    const today = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      levelTrend.push({
+        date: dateStr,
+        Beginner: distribution[0].count,
+        Learner: distribution[1].count,
+        Advanced: distribution[2].count,
+        Expert: distribution[3].count,
+        Master: distribution[4].count
+      });
+    }
 
     res.json({
       distribution,
@@ -49,7 +38,7 @@ router.get('/level-distribution', auth, adminAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching level distribution:', error);
-    res.status(500).json({ error: 'Failed to fetch level distribution' });
+    res.status(500).json({ error: 'Failed to fetch level distribution: ' + error.message });
   }
 });
 

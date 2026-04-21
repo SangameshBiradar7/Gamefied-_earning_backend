@@ -105,6 +105,24 @@ const userSchema = new mongoose.Schema({
       default: Date.now
     }
   }],
+  weeklyTestResults: [{
+    testId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WeeklyTest'
+    },
+    score: Number,
+    timeTaken: Number, // in seconds
+    answers: [{
+      questionIndex: Number,
+      selectedAnswer: String,
+      isCorrect: Boolean,
+      pointsEarned: Number
+    }],
+    completedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   createdAt: {
     type: Date,
     default: Date.now

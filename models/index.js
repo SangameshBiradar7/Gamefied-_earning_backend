@@ -4,6 +4,7 @@ const Subject = require('./Subject');
 const Lesson = require('./Lesson');
 const Badge = require('./Badge');
 const { Mission, UserMission } = require('./Mission');
+const WeeklyTest = require('./WeeklyTest');
 
 module.exports = {
   User,
@@ -12,5 +13,6 @@ module.exports = {
   Lesson,
   Badge,
   Mission,
-  UserMission
+  UserMission,
+  WeeklyTest
 };

@@ -52,6 +52,193 @@ router.get('/dashboard', auth, adminAuth, async (req, res) => {
   }
 });
 
+// ============ GRADE MANAGEMENT ============
+
+// Get all grades
+router.get('/grades', auth, adminAuth, async (req, res) => {
+  try {
+    const grades = await Grade.find().sort({ order: 1 });
+    const gradesWithCount = await Promise.all(grades.map(async (grade) => {
+      const studentCount = await User.countDocuments({ role: 'student', grade: grade._id });
+      const subjectCount = await Subject.countDocuments({ grade: grade._id, isActive: true });
+      return { ...grade.toObject(), studentCount, subjectCount };
+    }));
+    res.json(gradesWithCount);
+  } catch (error) {
+    console.error('Error fetching grades:', error);
+    res.status(500).json({ error: 'Failed to fetch grades' });
+  }
+});
+
+// Create grade
+router.post('/grades', auth, adminAuth, async (req, res) => {
+  try {
+    const { name, displayName, description, order } = req.body;
+    const grade = new Grade({ name, displayName, description, order: order || 0 });
+    await grade.save();
+    res.status(201).json(grade);
+  } catch (error) {
+    console.error('Error creating grade:', error);
+    res.status(500).json({ error: 'Failed to create grade' });
+  }
+});
+
+// Update grade
+router.put('/grades/:id', auth, adminAuth, async (req, res) => {
+  try {
+    const { name, displayName, description, order, isActive } = req.body;
+    const grade = await Grade.findByIdAndUpdate(
+      req.params.id,
+      { name, displayName, description, order, isActive },
+      { new: true }
+    );
+    if (!grade) return res.status(404).json({ error: 'Grade not found' });
+    res.json(grade);
+  } catch (error) {
+    console.error('Error updating grade:', error);
+    res.status(500).json({ error: 'Failed to update grade' });
+  }
+});
+
+// Delete grade
+router.delete('/grades/:id', auth, adminAuth, async (req, res) => {
+  try {
+    const grade = await Grade.findByIdAndDelete(req.params.id);
+    if (!grade) return res.status(404).json({ error: 'Grade not found' });
+    await Subject.deleteMany({ grade: req.params.id });
+    res.json({ message: 'Grade deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting grade:', error);
+    res.status(500).json({ error: 'Failed to delete grade' });
+  }
+});
+
+// ============ SUBJECT MANAGEMENT ============
+
+// Get all subjects (optionally by grade)
+router.get('/subjects', auth, adminAuth, async (req, res) => {
+  try {
+    const { gradeId } = req.query;
+    const query = gradeId ? { grade: gradeId } : {};
+    const subjects = await Subject.find(query).populate('grade', 'displayName').sort({ order: 1 });
+    const subjectsWithCount = await Promise.all(subjects.map(async (subject) => {
+      const lessonCount = await Lesson.countDocuments({ subject: subject._id, isActive: true });
+      return { ...subject.toObject(), lessonCount };
+    }));
+    res.json(subjectsWithCount);
+  } catch (error) {
+    console.error('Error fetching subjects:', error);
+    res.status(500).json({ error: 'Failed to fetch subjects' });
+  }
+});
+
+// Create subject
+router.post('/subjects', auth, adminAuth, async (req, res) => {
+  try {
+    const { name, displayName, description, grade, icon, color, order } = req.body;
+    const subject = new Subject({ name, displayName, description, grade, icon, color, order: order || 0 });
+    await subject.save();
+    res.status(201).json(subject);
+  } catch (error) {
+    console.error('Error creating subject:', error);
+    res.status(500).json({ error: 'Failed to create subject' });
+  }
+});
+
+// Update subject
+router.put('/subjects/:id', auth, adminAuth, async (req, res) => {
+  try {
+    const { name, displayName, description, icon, color, order, isActive } = req.body;
+    const subject = await Subject.findByIdAndUpdate(
+      req.params.id,
+      { name, displayName, description, icon, color, order, isActive },
+      { new: true }
+    );
+    if (!subject) return res.status(404).json({ error: 'Subject not found' });
+    res.json(subject);
+  } catch (error) {
+    console.error('Error updating subject:', error);
+    res.status(500).json({ error: 'Failed to update subject' });
+  }
+});
+
+// Delete subject
+router.delete('/subjects/:id', auth, adminAuth, async (req, res) => {
+  try {
+    const subject = await Subject.findByIdAndDelete(req.params.id);
+    if (!subject) return res.status(404).json({ error: 'Subject not found' });
+    await Lesson.deleteMany({ subject: req.params.id });
+    res.json({ message: 'Subject deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting subject:', error);
+    res.status(500).json({ error: 'Failed to delete subject' });
+  }
+});
+
+// ============ LESSON MANAGEMENT ============
+
+// Get all lessons (optionally by subject)
+router.get('/lessons', auth, adminAuth, async (req, res) => {
+  try {
+    const { subjectId, page = 1, limit = 20 } = req.query;
+    const query = subjectId ? { subject: subjectId } : {};
+    const lessons = await Lesson.find(query)
+      .populate('subject', 'displayName grade')
+      .skip((page - 1) * limit)
+      .limit(parseInt(limit))
+      .sort({ order: 1 });
+    const total = await Lesson.countDocuments(query);
+    res.json({ lessons, total, page: parseInt(page), totalPages: Math.ceil(total / limit) });
+  } catch (error) {
+    console.error('Error fetching lessons:', error);
+    res.status(500).json({ error: 'Failed to fetch lessons' });
+  }
+});
+
+// Create lesson
+router.post('/lessons', auth, adminAuth, async (req, res) => {
+  try {
+    const { title, description, subject, order, videoUrl, notes, quiz, pointsReward, quizPointsReward } = req.body;
+    const lesson = new Lesson({ title, description, subject, order: order || 0, videoUrl, notes, quiz, pointsReward, quizPointsReward });
+    await lesson.save();
+    res.status(201).json(lesson);
+  } catch (error) {
+    console.error('Error creating lesson:', error);
+    res.status(500).json({ error: 'Failed to create lesson' });
+  }
+});
+
+// Update lesson
+router.put('/lessons/:id', auth, adminAuth, async (req, res) => {
+  try {
+    const { title, description, order, videoUrl, notes, quiz, pointsReward, quizPointsReward, isActive } = req.body;
+    const lesson = await Lesson.findByIdAndUpdate(
+      req.params.id,
+      { title, description, order, videoUrl, notes, quiz, pointsReward, quizPointsReward, isActive },
+      { new: true }
+    );
+    if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+    res.json(lesson);
+  } catch (error) {
+    console.error('Error updating lesson:', error);
+    res.status(500).json({ error: 'Failed to update lesson' });
+  }
+});
+
+// Delete lesson
+router.delete('/lessons/:id', auth, adminAuth, async (req, res) => {
+  try {
+    const lesson = await Lesson.findByIdAndDelete(req.params.id);
+    if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+    res.json({ message: 'Lesson deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting lesson:', error);
+    res.status(500).json({ error: 'Failed to delete lesson' });
+  }
+});
+
+// ============ STUDENT MANAGEMENT ============
+
 // Admin: Get all students
 router.get('/students', auth, adminAuth, async (req, res) => {
   try {

@@ -524,6 +524,25 @@ router.get('/weekly-tests', auth, adminAuth, async (req, res) => {
       const submissions = await User.find({
         'weeklyTestResults.testId': test._id
       });
+
+      const submissionCount = submissions.length;
+      const passedCount = submissions.filter(u => {
+        const result = u.weeklyTestResults?.find(r =>
+          r.testId.toString() === test._id.toString()
+        );
+        return result && result.score >= test.passingScore;
+      }).length;
+
+      return {
+        ...test.toObject(),
+        results: {
+          attempted: submissionCount,
+          passRate: submissionCount > 0 ? Math.round((passedCount / submissionCount) * 100) : 0
+        }
+      };
+    }));
+
+    res.json(testsWithStats);
       
       const submissionCount = submissions.length;
       const passedCount = submissions.filter(u => {

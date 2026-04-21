@@ -77,6 +77,20 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Gamified Learning API is running' });
 });
 
+// JSON 404 for unmatched API routes
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not found' });
+});
+
+// Error handling middleware (JSON responses)
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(500).json({ error: 'Internal server error' });
+});
+
 // MongoDB connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/gamified-learning';
 const PORT = process.env.PORT || 5000;

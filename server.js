@@ -41,13 +41,10 @@ const initializeDefaultGrades = async () => {
 
 const app = express();
 
-// CORS - allow localhost and Vercel frontend
+// CORS - allow all origins for API access
 app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "https://gamefied-learning-frontend.vercel.app"
-  ],
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  origin: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true
 }));
 app.use(express.json({ limit: '50mb' }));

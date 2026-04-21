@@ -623,7 +623,7 @@ function generateRecommendations(atRiskStudents) {
   return recommendations;
 }
 
-// ============ UPDATED OVERVIEW WITH MORE METRICS ============
+// ============ COMPREHENSIVE OVERVIEW WITH ALL METRICS ============
 
 router.get('/overview', auth, adminAuth, async (req, res) => {
   try {
@@ -640,6 +640,14 @@ router.get('/overview', auth, adminAuth, async (req, res) => {
       'completedLessons.completedAt': { $gte: sevenDaysAgo }
     });
 
+    // Active today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const activeToday = await User.countDocuments({
+      role: 'student',
+      'completedLessons.completedAt': { $gte: today }
+    });
+
     // Average points
     const averagePoints = await User.aggregate([
       { $match: { role: 'student' } },
@@ -653,11 +661,15 @@ router.get('/overview', auth, adminAuth, async (req, res) => {
     ]);
 
     // New registrations today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     const newToday = await User.countDocuments({
       role: 'student',
       createdAt: { $gte: today }
+    });
+
+    // New registrations this week
+    const newThisWeek = await User.countDocuments({
+      role: 'student',
+      createdAt: { $gte: sevenDaysAgo }
     });
 
     // Students with perfect streaks (>= 7 days)
@@ -668,6 +680,7 @@ router.get('/overview', auth, adminAuth, async (req, res) => {
 
     // Lessons completed today
     const lessonsToday = await User.aggregate([
+      { $match: { role: 'student' } },
       { $unwind: '$completedLessons' },
       {
         $match: {
@@ -677,21 +690,119 @@ router.get('/overview', auth, adminAuth, async (req, res) => {
       { $count: 'count' }
     ]);
 
+    // Students who completed at least one quiz
+    const studentsWithQuizzes = await User.countDocuments({
+      role: 'student',
+      quizResults: { $exists: true, $ne: [] }
+    });
+
+    // Total quiz completions
+    const totalQuizCompletions = await User.aggregate([
+      { $match: { role: 'student' } },
+      { $unwind: '$quizResults' },
+      { $count: 'count' }
+    ]);
+
+    // Weekly test participants (last 7 days)
+    const weeklyTestParticipants = await User.aggregate([
+      { $match: { role: 'student', 'quizResults.completedAt': { $gte: sevenDaysAgo } } },
+      { $group: { _id: '$_id' } },
+      { $count: 'count' }
+    ]);
+
+    // Level distribution
+    const levels = ['Beginner', 'Learner', 'Advanced', 'Expert', 'Master'];
+    const levelCounts = await Promise.all(levels.map(async (level) => {
+      const count = await User.countDocuments({ role: 'student', level });
+      return { level, count };
+    }));
+
     res.json({
       totalStudents,
       totalGrades,
       totalSubjects,
       totalLessons,
       activeStudents,
+      activeToday,
       newToday,
+      newThisWeek,
       perfectStreaks: perfectStreaks,
       lessonsToday: lessonsToday[0]?.count || 0,
       averagePoints: Math.round(averagePoints[0]?.avgPoints || 0),
-      totalPoints: totalPoints[0]?.totalPoints || 0
+      totalPoints: totalPoints[0]?.totalPoints || 0,
+      studentsWithQuizzes,
+      totalQuizCompletions: totalQuizCompletions[0]?.count || 0,
+      weeklyTestParticipants: weeklyTestParticipants[0]?.count || 0,
+      levelCounts
     });
   } catch (error) {
     console.error('Error fetching analytics:', error);
     res.status(500).json({ error: 'Failed to fetch analytics' });
+  }
+});
+
+// Weekly performance report
+router.get('/weekly-performance', auth, adminAuth, async (req, res) => {
+  try {
+    const { weeks = 4 } = req.query;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - (parseInt(weeks) * 7));
+
+    const weeklyData = await Promise.all(
+      Array.from({ length: parseInt(weeks) }, async (_, i) => {
+        const weekStart = new Date(startDate);
+        weekStart.setDate(weekStart.getDate() + (i * 7));
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 7);
+
+        const newStudents = await User.countDocuments({
+          role: 'student',
+          createdAt: { $gte: weekStart, $lt: weekEnd }
+        });
+
+        const activeStudents = await User.countDocuments({
+          role: 'student',
+          'completedLessons.completedAt': { $gte: weekStart, $lt: weekEnd }
+        });
+
+        const quizCompletions = await User.aggregate([
+          { $match: { role: 'student', 'quizResults.completedAt': { $gte: weekStart, $lt: weekEnd } } },
+          { $unwind: '$quizResults' },
+          { $match: { 'quizResults.completedAt': { $gte: weekStart, $lt: weekEnd } } },
+          { $count: 'count' }
+        ]);
+
+        return {
+          week: `Week ${i + 1}`,
+          startDate: weekStart.toISOString().split('T')[0],
+          newStudents,
+          activeStudents,
+          quizCompletions: quizCompletions[0]?.count || 0
+        };
+      })
+    );
+
+    res.json(weeklyData);
+  } catch (error) {
+    console.error('Error fetching weekly performance:', error);
+    res.status(500).json({ error: 'Failed to fetch weekly performance' });
+  }
+});
+
+// Recent registrations
+router.get('/recent-registrations', auth, adminAuth, async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+    const recentStudents = await User.find({ role: 'student' })
+      .select('username points level grade createdAt')
+      .populate('grade', 'displayName')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+
+    res.json(recentStudents);
+  } catch (error) {
+    console.error('Error fetching recent registrations:', error);
+    res.status(500).json({ error: 'Failed to fetch recent registrations' });
   }
 });
 
